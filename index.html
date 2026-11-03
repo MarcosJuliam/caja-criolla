@@ -91,6 +91,10 @@ input[type=date]{display:block;min-width:0;max-width:100%;-webkit-appearance:non
 input[type=date]::-webkit-date-and-time-value{text-align:left}
 input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.9;cursor:pointer;margin-left:4px}
 @media (max-width:480px){.two.fechas{grid-template-columns:minmax(0,1fr)}}
+.group>.row{margin-bottom:8px;flex-wrap:nowrap}
+[id^="hx-"]{scroll-margin-top:120px}
+.group>.row h2{margin:0}
+.link.editlink{color:var(--ink);background:rgba(255,255,255,.16);border-radius:999px;padding:6px 14px;white-space:nowrap}
 #btnHoyEdit{background:linear-gradient(135deg,#FDDB4F 0%,#FCD12B 100%);color:#1B2633;box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .link#btnHoyEdit{border-radius:999px;padding:8px 16px;font-weight:700}
 input.big{font:600 30px var(--f-num);padding:10px 14px;text-align:right}
@@ -295,9 +299,13 @@ function canWrite(){return !!S.db}
 const CATEG=[["arroces","Arroz","arroz"],["granos","Granos (opcional)","granos"],["carnes","Carne","carne"],["sides","Side","side"]];
 const TIPO={arroces:"Arroz",granos:"Granos",carnes:"Carne",sides:"Side",solos:"Plato solo"};
 function bebList(){return (S.cfg&&S.cfg.bebidas)||[]}
-function esBebida(n){return bebList().some(b=>b.nombre===n)}
-/* Drinks follow today's menu once any drink is marked in it; older menus without drinks show all of them. */
-function bebHoy(){const m=hoyMenu(),l=bebList();if(!m||!m.some(esBebida))return l;return l.filter(b=>m.includes(b.nombre))}
+function lista(k){return (S.cfg&&S.cfg[k])||[]}
+function esDe(k,n){return lista(k).some(b=>b.nombre===n)}
+function esBebida(n){return esDe("bebidas",n)}
+/* Drinks and extras follow today's menu once any of that kind is marked in it; older menus without them show all. */
+function deHoy(k){const m=hoyMenu(),l=lista(k);if(!m||!m.some(n=>esDe(k,n)))return l;return l.filter(b=>m.includes(b.nombre))}
+function bebHoy(){return deHoy("bebidas")}
+const SUELTOS_HOY=[["agregados","Extras disponibles","Extra","extra"],["bebidas","Bebidas disponibles","Bebida","bebida"]];
 function solosList(){return (S.cfg&&S.cfg.solos)||[]}
 function agregList(){return (S.cfg&&S.cfg.agregados)||[]}
 function findSuelto(n){const a=solosList().find(b=>b.nombre===n);if(a)return {item:a,tipo:"plato",k:"solos"};const g=agregList().find(b=>b.nombre===n);if(g)return {item:g,tipo:"extra",k:"agregados"};const b=bebList().find(x=>x.nombre===n);return b?{item:b,tipo:"bebida",k:"bebidas"}:null}
@@ -330,9 +338,11 @@ function menuHoyCard(){
       const list=S.cfg[k]||[];
       h+=`<h2 style="margin:4px 0 0">${t}</h2>${list.length?`<div class="chips">${list.map(x=>`<button class="chip" data-hoy="${esc(x)}" aria-pressed="${sel.includes(x)}">${esc(x)}</button>`).join("")}</div>`:""}<div class="addrow"><input type="text" id="hadd-${k}" placeholder="Añadir a ${t.toLowerCase()}" aria-label="Nombre nuevo para ${t.toLowerCase()}" enterkeyhint="done"><button class="btn ghost" data-hadd="${k}">Añadir</button></div>`;
     }
-    const bl=bebList();
-    h+=`<h2 style="margin:4px 0 0">Bebidas disponibles</h2>${bl.length?`<div class="chips">${bl.map(b=>`<button class="chip" data-hoy="${esc(b.nombre)}" aria-pressed="${sel.includes(b.nombre)}">${esc(b.nombre)}${hasPrice(b)?`<span class="ex">${money(b.precio)}</span>`:""}</button>`).join("")}</div>`:""}<div class="addrow"><input type="text" id="hbadd-n" placeholder="Bebida" aria-label="Nombre de la bebida nueva" enterkeyhint="next"><input inputmode="decimal" id="hbadd-p" placeholder="Precio" aria-label="Precio de la bebida sin IVU" enterkeyhint="done" style="max-width:96px;text-align:right"><button class="btn ghost" data-hbadd="1">Añadir</button></div>`;
-    h+=`<p class="note" style="margin:0">Lo que añadas aquí se guarda en tu menú y queda marcado para hoy. Los precios de extras se cambian en <b>Más → Menú y precios</b>.</p><div class="two"><button class="btn ghost" id="btnHoyCancel">Cancelar</button><button class="btn" id="btnHoySave" ${sel.length&&canWrite()?"":"disabled"}>Guardar menú</button></div></section>`;
+    for(const [k,t,ph,uno] of SUELTOS_HOY){
+      const bl=lista(k);
+      h+=`<h2 id="hx-${k}" style="margin:4px 0 0">${t}</h2>${bl.length?`<div class="chips">${bl.map(b=>`<button class="chip" data-hoy="${esc(b.nombre)}" aria-pressed="${sel.includes(b.nombre)}">${esc(b.nombre)}${hasPrice(b)?`<span class="ex">${money(b.precio)}</span>`:""}</button>`).join("")}</div>`:""}<div class="addrow"><input type="text" id="hxadd-${k}-n" placeholder="${ph}" aria-label="Nombre del ${uno} nuevo" enterkeyhint="next"><input inputmode="decimal" id="hxadd-${k}-p" placeholder="Precio" aria-label="Precio del ${uno} sin IVU" enterkeyhint="done" style="max-width:96px;text-align:right"><button class="btn ghost" data-hxadd="${k}">Añadir</button></div>`;
+    }
+    h+=`<p class="note" style="margin:0">Lo que añadas aquí se guarda en tu menú y queda marcado para hoy. Para cambiar el precio de un extra o una bebida, escribe su nombre con el precio nuevo y toca Añadir.</p><div class="two"><button class="btn ghost" id="btnHoyCancel">Cancelar</button><button class="btn" id="btnHoySave" ${sel.length&&canWrite()?"":"disabled"}>Guardar menú</button></div></section>`;
     return h;
   }
   if(!m) return `<section class="pricefix"><span><b>¿Qué hay hoy?</b> Marca el menú del día para ver solo eso al vender.</span><button class="btn ghost" id="btnHoyEdit">Escoger menú de hoy</button></section>`;
@@ -351,8 +361,9 @@ function rVender(){
   const solos=solosList();
   const tip='<span class="muted" style="text-transform:none;letter-spacing:0;font-weight:500"> · toca para añadir</span>';
   if(solos.length) h+=`<section class="group"><h2>Platos solos${tip}</h2>${tapChips(solos)}</section>`;
-  if(agregList().length) h+=`<section class="group"><h2>Extras${tip}</h2>${tapChips(agregList())}</section>`;
-  h+=`<section class="group"><h2>Bebidas${tip}</h2>${bebHoy().length?tapChips(bebHoy()):'<div class="empty">No hay bebidas para hoy. Añádelas en <b>Escoger menú de hoy</b>.</div>'}  </div><aside class="vticket">
+  const editar=k=>`<button class="link editlink" data-hoyedit="${k}" aria-label="Editar">✎ Editar</button>`;
+  h+=`<section class="group"><div class="row"><h2>Extras${tip}</h2>${editar("agregados")}</div>${deHoy("agregados").length?tapChips(deHoy("agregados")):'<div class="empty">No hay extras para hoy. Toca <b>✎ Editar</b> para añadirlos.</div>'}</section>`;
+  h+=`<section class="group"><div class="row"><h2>Bebidas${tip}</h2>${editar("bebidas")}</div>${bebHoy().length?tapChips(bebHoy()):'<div class="empty">No hay bebidas para hoy. Toca <b>✎ Editar</b> para añadirlas.</div>'}  </div><aside class="vticket">
   <section class="ticket" aria-label="Venta">`;
   if(!T.algo&&!T.items.length){
     h+=`<div class="name empty">Escoge un plato, una bebida o varios.</div>`;
@@ -550,20 +561,21 @@ V.addEventListener("change",ev=>{
 function clone(o){return JSON.parse(JSON.stringify(o))}
 function round2(n){return Math.round(n*100)/100} function round4(n){return Math.round(n*10000)/10000}
 V.addEventListener("focusout",()=>{setTimeout(()=>{if(pendingRender&&!editing())render()},0)});
-V.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&ev.target.tagName==="INPUT"){if(ev.target.id.startsWith("hadd-")){ev.preventDefault();addHoy(ev.target.id.slice(5));return}if(ev.target.id==="hbadd-n"){ev.preventDefault();const pp=document.getElementById("hbadd-p");if(pp)pp.focus();return}if(ev.target.id==="hbadd-p"){ev.preventDefault();addBebHoy();return}ev.target.blur()}});
-function addBebHoy(){
-  const ni=document.getElementById("hbadd-n"), pi=document.getElementById("hbadd-p"); if(!ni||!S.cfg)return;
+V.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&ev.target.tagName==="INPUT"){if(ev.target.id.startsWith("hadd-")){ev.preventDefault();addHoy(ev.target.id.slice(5));return}{const m=ev.target.id.match(/^hxadd-(\w+)-(n|p)$/);if(m){ev.preventDefault();if(m[2]==="n"){const pp=document.getElementById("hxadd-"+m[1]+"-p");if(pp)pp.focus()}else addSueltoHoy(m[1]);return}}ev.target.blur()}});
+function addSueltoHoy(k){
+  const ni=document.getElementById("hxadd-"+k+"-n"), pi=document.getElementById("hxadd-"+k+"-p"); if(!ni||!S.cfg)return;
   const v=(ni.value||"").trim().replace(/\s+/g," "), pr=round2(parseFloat(pi&&pi.value)||0);
-  if(!v){toast("Escribe el nombre de la bebida.");ni.focus();return}
-  const n=clone(S.cfg); n.bebidas=n.bebidas||[];
-  const ya=n.bebidas.find(x=>x.nombre.toLowerCase()===v.toLowerCase());
+  const uno=k==="bebidas"?"la bebida":"el extra";
+  if(!v){toast("Escribe el nombre de "+uno+".");ni.focus();return}
+  const n=clone(S.cfg); n[k]=n[k]||[];
+  const ya=n[k].find(x=>x.nombre.toLowerCase()===v.toLowerCase());
   const otro=!ya&&findSuelto(v);
-  if(otro){toast(v+" ya existe como "+(otro.k==="solos"?"plato solo":"extra")+".");return}
+  if(otro){toast(v+" ya existe como "+({solos:"plato solo",agregados:"extra",bebidas:"bebida"})[otro.k]+".");return}
   const nombre=ya?ya.nombre:v;
-  if(ya){if(pr>0)ya.precio=pr}else n.bebidas.push({nombre:v,precio:pr>0?pr:null});
+  if(ya){if(pr>0)ya.precio=pr}else n[k].push({nombre:v,precio:pr>0?pr:null});
   if(!S.hoySel.includes(nombre))S.hoySel.push(nombre);
   ni.value="";if(pi)pi.value="";ni.blur();if(pi)pi.blur();
-  if(!ya||pr>0){S.cfg=n;saveCfg(n).then(()=>toast(nombre+(ya?" actualizada":" añadida")+(pr>0?" · "+money(pr):" (sin precio)"))).catch(e=>toast(errMsg(e)))}
+  if(!ya||pr>0){S.cfg=n;saveCfg(n).then(()=>toast(nombre+(ya?" actualizado":" añadido")+(pr>0?" · "+money(pr):" (sin precio)"))).catch(e=>toast(errMsg(e)))}
   render();
 }
 function addHoy(k){
@@ -584,8 +596,14 @@ V.addEventListener("click",async ev=>{
   if(b.id==="btnEditBase"){S.editBase=true;render();setTimeout(()=>{const x=document.getElementById("cfgBaseT");if(x){x.focus();x.select()}},0);return}
   if(d.editp!==undefined){S.editP=d.editp;render();setTimeout(()=>{const x=V.querySelector(`[data-bpnew="${CSS.escape(d.editp)}"]`);if(x){x.focus();x.select()}},0);return}
   if(d.pick){const i=d.pick.indexOf("|"),a=d.pick.slice(0,i),v=d.pick.slice(i+1);S.sel[a]=S.sel[a]===v?null:v;render();return}
-  if(b.id==="btnHoyEdit"){S.hoyEdit=true;S.hoySel=(hoyMenu()||[]).slice();if(!S.hoySel.some(esBebida))bebList().forEach(x=>S.hoySel.push(x.nombre));render();return}
-  if(d.hbadd){addBebHoy();return}
+  if(b.id==="btnHoyEdit"||d.hoyedit){
+    S.hoyEdit=true;S.hoySel=(hoyMenu()||[]).slice();
+    SUELTOS_HOY.forEach(([k])=>{if(!S.hoySel.some(x=>esDe(k,x)))lista(k).forEach(x=>S.hoySel.push(x.nombre))});
+    render();
+    if(d.hoyedit){const t=document.getElementById("hx-"+d.hoyedit);if(t)t.scrollIntoView({block:"start"})}else window.scrollTo(0,0);
+    return;
+  }
+  if(d.hxadd){addSueltoHoy(d.hxadd);return}
   if(d.hadd){addHoy(d.hadd);return}
   if(b.id==="btnHoyCancel"){S.hoyEdit=false;render();return}
   if(d.hoy!==undefined){const i=S.hoySel.indexOf(d.hoy);if(i>=0)S.hoySel.splice(i,1);else S.hoySel.push(d.hoy);render();return}
