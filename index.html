@@ -309,7 +309,10 @@ const SUELTOS_HOY=[["agregados","Extras disponibles","Extra","extra"],["bebidas"
 function solosList(){return (S.cfg&&S.cfg.solos)||[]}
 function agregList(){return (S.cfg&&S.cfg.agregados)||[]}
 function findSuelto(n){const a=solosList().find(b=>b.nombre===n);if(a)return {item:a,tipo:"plato",k:"solos"};const g=agregList().find(b=>b.nombre===n);if(g)return {item:g,tipo:"extra",k:"agregados"};const b=bebList().find(x=>x.nombre===n);return b?{item:b,tipo:"bebida",k:"bebidas"}:null}
-function hasPrice(x){return Number(x&&x.precio)>0}
+/* A price of 0 is valid (e.g. "Agua incluida"); only null/empty means "no price yet". */
+function hasPrice(x){const p=x&&x.precio;return p!==null&&p!==undefined&&p!==""&&isFinite(p)&&Number(p)>=0}
+function precioDe(s){s=String(s==null?"":s).trim().replace(",",".");if(s==="")return null;const v=parseFloat(s);return isFinite(v)&&v>=0?round2(v):null}
+function precioTxt(p){return Number(p)===0?"$0 incluido":money(p)}
 function hoyMenu(){const d=S.days[S.today];return d&&Array.isArray(d.menu)?d.menu:null}
 function enHoy(n){const m=hoyMenu();return !m||m.includes(n)}
 function extraDe(n){return Number(S.cfg&&S.cfg.extras&&S.cfg.extras[n])||0}
@@ -340,7 +343,7 @@ function menuHoyCard(){
     }
     for(const [k,t,ph,uno] of SUELTOS_HOY){
       const bl=lista(k);
-      h+=`<h2 id="hx-${k}" style="margin:4px 0 0">${t}</h2>${bl.length?`<div class="chips">${bl.map(b=>`<button class="chip" data-hoy="${esc(b.nombre)}" aria-pressed="${sel.includes(b.nombre)}">${esc(b.nombre)}${hasPrice(b)?`<span class="ex">${money(b.precio)}</span>`:""}</button>`).join("")}</div>`:""}<div class="addrow"><input type="text" id="hxadd-${k}-n" placeholder="${ph}" aria-label="Nombre del ${uno} nuevo" enterkeyhint="next"><input inputmode="decimal" id="hxadd-${k}-p" placeholder="Precio" aria-label="Precio del ${uno} sin IVU" enterkeyhint="done" style="max-width:96px;text-align:right"><button class="btn ghost" data-hxadd="${k}">Añadir</button></div>`;
+      h+=`<h2 id="hx-${k}" style="margin:4px 0 0">${t}</h2>${bl.length?`<div class="chips">${bl.map(b=>`<button class="chip" data-hoy="${esc(b.nombre)}" aria-pressed="${sel.includes(b.nombre)}">${esc(b.nombre)}${hasPrice(b)?`<span class="ex">${precioTxt(b.precio)}</span>`:""}</button>`).join("")}</div>`:""}<div class="addrow"><input type="text" id="hxadd-${k}-n" placeholder="${ph}" aria-label="Nombre del ${uno} nuevo" enterkeyhint="next"><input inputmode="decimal" id="hxadd-${k}-p" placeholder="Precio" aria-label="Precio del ${uno} sin IVU" enterkeyhint="done" style="max-width:96px;text-align:right"><button class="btn ghost" data-hxadd="${k}">Añadir</button></div>`;
     }
     h+=`<p class="note" style="margin:0">Lo que añadas aquí se guarda en tu menú y queda marcado para hoy. Para cambiar el precio de un extra o una bebida, escribe su nombre con el precio nuevo y toca Añadir.</p><div class="two"><button class="btn ghost" id="btnHoyCancel">Cancelar</button><button class="btn" id="btnHoySave" ${sel.length&&canWrite()?"":"disabled"}>Guardar menú</button></div></section>`;
     return h;
@@ -380,7 +383,7 @@ function rVender(){
     }
   }
   if(T.items.length){
-    h+='<div class="tlines">'+T.items.map(i=>`<div class="tline">${i.suelto?`<button class="mini" data-bmenos="${esc(i.nombre)}" aria-label="Quitar una ${esc(i.nombre)}">−</button>`:""}<span class="what">${i.cant}× ${esc(i.nombre)}</span>${(i.sinPrecio||S.editP===i.nombre)?`<input inputmode="decimal" data-bpnew="${esc(i.nombre)}" placeholder="Precio c/u" value="${i.precio>0?i.precio.toFixed(2):""}" aria-label="Precio de 1 ${esc(i.nombre)} sin IVU" style="max-width:96px;min-height:38px;padding:6px 8px;text-align:right">`:(i.suelto?`<button class="link num" data-editp="${esc(i.nombre)}" aria-label="Cambiar precio de ${esc(i.nombre)}" style="color:var(--ink);font-size:15px">${money(i.cant*i.precio)} ✎</button>`:`<span class="num">${money(i.cant*i.precio)}</span>`)}</div>`).join("")+'</div>';
+    h+='<div class="tlines">'+T.items.map(i=>`<div class="tline">${i.suelto?`<button class="mini" data-bmenos="${esc(i.nombre)}" aria-label="Quitar una ${esc(i.nombre)}">−</button>`:""}<span class="what">${i.cant}× ${esc(i.nombre)}</span>${(i.sinPrecio||S.editP===i.nombre)?`<input inputmode="decimal" data-bpnew="${esc(i.nombre)}" placeholder="Precio c/u" value="${i.precio>0?i.precio.toFixed(2):""}" aria-label="Precio de 1 ${esc(i.nombre)} sin IVU" style="max-width:96px;min-height:38px;padding:6px 8px;text-align:right">`:(i.suelto?`<button class="link num" data-editp="${esc(i.nombre)}" aria-label="Cambiar precio de ${esc(i.nombre)}" style="color:var(--ink);font-size:15px">${i.precio===0?"$0 incluido":money(i.cant*i.precio)} ✎</button>`:`<span class="num">${money(i.cant*i.precio)}</span>`)}</div>`).join("")+'</div>';
     if(T.items.some(i=>i.sinPrecio||S.editP===i.nombre)) h+='<div class="pricefix small"><b>Precio de cada uno</b>, sin IVU. Escríbelo y toca fuera del cuadro o Enter. Se guarda en tu menú.</div>';
   }
   h+=`${seg(PAGOS,S.metodo,"metodo")}
@@ -554,8 +557,8 @@ V.addEventListener("change",ev=>{
   if(t.id==="expHasta"&&t.value){S.exp.hasta=t.value;S.exp.rows=null;render()}
   if(t.id==="cfgBase"||t.id==="cfgBaseT"){const v=round2(parseFloat(t.value)||0);if(v>0){const n=clone(S.cfg);n.base=v;S.cfg=n;S.editBase=false;render();saveCfg(n).then(()=>toast("Precio base guardado")).catch(e=>toast(errMsg(e)))}}
   if(t.dataset.extra!==undefined){const v=round2(parseFloat(t.value)||0),n=clone(S.cfg);n.extras=n.extras||{};if(v>0)n.extras[t.dataset.extra]=v;else delete n.extras[t.dataset.extra];saveCfg(n).then(()=>toast(v>0?"Extra guardado":"Extra quitado")).catch(e=>toast(errMsg(e)))}
-  if(t.dataset.bpnew!==undefined){const v=round2(parseFloat(t.value)||0),f=findSuelto(t.dataset.bpnew);if(v>0&&f){const n=clone(S.cfg);const it=(n[f.k]||[]).find(x=>x.nombre===t.dataset.bpnew);if(it){it.precio=v;S.cfg=n;S.editP=null;render();saveCfg(n).then(()=>toast("Precio guardado")).catch(e=>toast(errMsg(e)))}}}
-  if(t.dataset.xprecio!==undefined){const [k,i]=t.dataset.xprecio.split("|"),v=parseFloat(t.value)||0;if(v>=0){const n=clone(S.cfg);n[k][+i].precio=v>0?round2(v):null;saveCfg(n).then(()=>toast("Precio guardado")).catch(e=>toast(errMsg(e)))}}
+  if(t.dataset.bpnew!==undefined){const v=precioDe(t.value),f=findSuelto(t.dataset.bpnew);if(v!==null&&f){const n=clone(S.cfg);const it=(n[f.k]||[]).find(x=>x.nombre===t.dataset.bpnew);if(it){it.precio=v;S.cfg=n;S.editP=null;render();saveCfg(n).then(()=>toast("Precio guardado")).catch(e=>toast(errMsg(e)))}}}
+  if(t.dataset.xprecio!==undefined){const [k,i]=t.dataset.xprecio.split("|"),v=precioDe(t.value);{const n=clone(S.cfg);n[k][+i].precio=v;saveCfg(n).then(()=>toast("Precio guardado")).catch(e=>toast(errMsg(e)))}}
   if(t.id==="cfgIvu"){const v=parseFloat(t.value);if(v>=0&&v<30){const n=clone(S.cfg);n.ivu=round4(v/100);saveCfg(n).then(()=>toast("IVU guardado")).catch(e=>toast(errMsg(e)))}}
 });
 function clone(o){return JSON.parse(JSON.stringify(o))}
@@ -564,7 +567,7 @@ V.addEventListener("focusout",()=>{setTimeout(()=>{if(pendingRender&&!editing())
 V.addEventListener("keydown",ev=>{if(ev.key==="Enter"&&ev.target.tagName==="INPUT"){if(ev.target.id.startsWith("hadd-")){ev.preventDefault();addHoy(ev.target.id.slice(5));return}{const m=ev.target.id.match(/^hxadd-(\w+)-(n|p)$/);if(m){ev.preventDefault();if(m[2]==="n"){const pp=document.getElementById("hxadd-"+m[1]+"-p");if(pp)pp.focus()}else addSueltoHoy(m[1]);return}}ev.target.blur()}});
 function addSueltoHoy(k){
   const ni=document.getElementById("hxadd-"+k+"-n"), pi=document.getElementById("hxadd-"+k+"-p"); if(!ni||!S.cfg)return;
-  const v=(ni.value||"").trim().replace(/\s+/g," "), pr=round2(parseFloat(pi&&pi.value)||0);
+  const v=(ni.value||"").trim().replace(/\s+/g," "), pr=precioDe(pi&&pi.value);
   const uno=k==="bebidas"?"la bebida":"el extra";
   if(!v){toast("Escribe el nombre de "+uno+".");ni.focus();return}
   const n=clone(S.cfg); n[k]=n[k]||[];
@@ -572,10 +575,10 @@ function addSueltoHoy(k){
   const otro=!ya&&findSuelto(v);
   if(otro){toast(v+" ya existe como "+({solos:"plato solo",agregados:"extra",bebidas:"bebida"})[otro.k]+".");return}
   const nombre=ya?ya.nombre:v;
-  if(ya){if(pr>0)ya.precio=pr}else n[k].push({nombre:v,precio:pr>0?pr:null});
+  if(ya){if(pr!==null)ya.precio=pr}else n[k].push({nombre:v,precio:pr});
   if(!S.hoySel.includes(nombre))S.hoySel.push(nombre);
   ni.value="";if(pi)pi.value="";ni.blur();if(pi)pi.blur();
-  if(!ya||pr>0){S.cfg=n;saveCfg(n).then(()=>toast(nombre+(ya?" actualizado":" añadido")+(pr>0?" · "+money(pr):" (sin precio)"))).catch(e=>toast(errMsg(e)))}
+  if(!ya||pr!==null){S.cfg=n;saveCfg(n).then(()=>toast(nombre+(ya?" actualizado":" añadido")+(pr!==null?" · "+precioTxt(pr):" (sin precio)"))).catch(e=>toast(errMsg(e)))}
   render();
 }
 function addHoy(k){
@@ -676,7 +679,7 @@ V.addEventListener("click",async ev=>{
   if(d.copy){copyKind(d.copy);return}
   if(d.csv){csvKind(d.csv);return}
   if(b.id==="btnMenu"){S.menuOpen=!S.menuOpen;render();return}
-  if(d.xadd){const k=d.xadd,nm=(document.getElementById("addN-"+k).value||"").trim(),pr=round2(parseFloat(document.getElementById("addP-"+k).value)||0);if(!nm){toast("Escribe el nombre.");return}if(findSuelto(nm)){toast("Ese producto ya está.");return}const n=clone(S.cfg);n[k]=(n[k]||[]);n[k].push(pr>0?{nombre:nm,precio:pr}:{nombre:nm,precio:null});saveCfg(n).then(()=>toast(nm+" añadido"+(pr>0?"":" (sin precio)"))).catch(e=>toast(errMsg(e)));return}
+  if(d.xadd){const k=d.xadd,nm=(document.getElementById("addN-"+k).value||"").trim(),pr=precioDe(document.getElementById("addP-"+k).value);if(!nm){toast("Escribe el nombre.");return}if(findSuelto(nm)){toast("Ese producto ya está.");return}const n=clone(S.cfg);n[k]=(n[k]||[]);n[k].push({nombre:nm,precio:pr});saveCfg(n).then(()=>toast(nm+" añadido"+(pr!==null?" · "+precioTxt(pr):" (sin precio)"))).catch(e=>toast(errMsg(e)));return}
   if(d.xdel){const [k,i]=d.xdel.split("|");const n=clone(S.cfg);n[k].splice(+i,1);saveCfg(n).then(()=>toast("Quitado")).catch(e=>toast(errMsg(e)));return}
   if(d.cdel){const [k,i]=d.cdel.split("|");const n=clone(S.cfg);n[k].splice(+i,1);saveCfg(n).catch(e=>toast(errMsg(e)));return}
   if(d.cadd){const inp=document.getElementById("add-"+d.cadd);const v=(inp.value||"").trim();if(!v)return;const n=clone(S.cfg);n[d.cadd]=(n[d.cadd]||[]);if(!n[d.cadd].includes(v))n[d.cadd].push(v);saveCfg(n).then(()=>toast("Añadido")).catch(e=>toast(errMsg(e)));return}
