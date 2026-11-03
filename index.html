@@ -84,6 +84,13 @@ h2{font-family:var(--f-display);font-weight:600;font-size:13px;text-transform:up
 label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;color:var(--muted)}
 input[type=text],input[type=password],input[type=number],input[type=date],input[inputmode]{font:500 16px var(--f-body);color:var(--ink);background:var(--surface);border:1.5px solid var(--line);border-radius:10px;padding:11px 12px;min-height:46px;width:100%}
 input::placeholder{color:var(--muted);opacity:.7}
+/* Date fields: never wider than their column (iOS gives them a large intrinsic width), visible calendar icon */
+.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.two>*{min-width:0}
+input[type=date]{display:block;min-width:0;max-width:100%;-webkit-appearance:none;appearance:none;padding-right:8px;font-size:15px}
+input[type=date]::-webkit-date-and-time-value{text-align:left}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.9;cursor:pointer;margin-left:4px}
+@media (max-width:480px){.two.fechas{grid-template-columns:minmax(0,1fr)}}
 #btnHoyEdit{background:linear-gradient(135deg,#FDDB4F 0%,#FCD12B 100%);color:#1B2633;box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .link#btnHoyEdit{border-radius:999px;padding:8px 16px;font-weight:700}
 input.big{font:600 30px var(--f-num);padding:10px 14px;text-align:right}
@@ -448,7 +455,7 @@ function rConexion(){
 function rMas(){
   const e=S.exp, r=e.rows;
   let h=rConexion()+`<section class="card"><h2 style="margin:0">Pasar al Excel</h2>
-    <div class="two"><label class="f">Desde<input type="date" id="expDesde" value="${e.desde}" max="${S.today}"></label><label class="f">Hasta<input type="date" id="expHasta" value="${e.hasta}" max="${S.today}"></label></div>
+    <div class="two fechas"><label class="f">Desde<input type="date" id="expDesde" value="${e.desde}" max="${S.today}"></label><label class="f">Hasta<input type="date" id="expHasta" value="${e.hasta}" max="${S.today}"></label></div>
     <button class="btn ghost" id="btnCargar" ${S.db?"":"disabled"}>${e.cargando?"Buscando…":"Buscar registros"}</button>`;
   if(r){
     h+=`<p class="note" style="margin:0">Toca <b>Copiar</b> y pega en el Excel, en la <b>columna A de la primera fila vacía</b> de la hoja con el mismo nombre.</p>

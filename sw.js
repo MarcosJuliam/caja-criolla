@@ -1,6 +1,6 @@
 /* Caja Criolla service worker: keeps the app shell available offline.
    Google Sheets calls (script.google.com) always go to the network. */
-const VERSION = "cc-v2";
+const VERSION = "cc-v3";
 const SHELL = ["./", "index.html", "sync.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png", "icons/apple-touch-icon.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
