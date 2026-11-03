@@ -183,6 +183,9 @@ html,body{margin:0}
 .syncpill.pend .dot{background:#FFD27A}
 .syncpill.err .dot,.syncpill.off .dot{background:#FF8A80}
 .cxstate{border-radius:10px;padding:10px 12px;background:rgba(255,255,255,.14);font-size:14px}
+.preciorow{display:flex;align-items:flex-end;gap:10px}
+.preciorow input{font:600 20px var(--f-num);text-align:right}
+.preciorow .link{white-space:nowrap;margin-bottom:4px}
 .filebtn{position:relative;overflow:hidden}
 .filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer}
 </style>
@@ -215,7 +218,7 @@ const CATS=["Ingredientes","Empaques","Gas","Luz","Agua","Renta","Nómina","Mant
 const RAZONES=["Sobró al cierre","Se quemó","Se dañó","Error en orden","Otro"];
 
 const S={db:null,dbState:"cargando",cfg:null,tab:"vender",today:ymd(new Date()),
-  days:{}, sel:{arroz:null,granos:null,carne:null,side:null}, beb:{}, cant:1, metodo:"Efectivo", hoyEdit:false, hoySel:[],
+  days:{}, sel:{arroz:[],granos:[],carne:[],side:[]}, precioManual:null, beb:{}, cant:1, metodo:"Efectivo", hoyEdit:false, hoySel:[],
   g:{monto:"",cat:null,desc:"",sup:"",metodo:"Efectivo"},
   m:{comp:null,porc:1,razon:"Sobró al cierre"},
   diaFecha:null, confirmDel:null, exp:{desde:null,hasta:null,rows:null,cargando:false,fallback:null}, menuOpen:false};
@@ -318,20 +321,32 @@ function enHoy(n){const m=hoyMenu();return !m||m.includes(n)}
 function extraDe(n){return Number(S.cfg&&S.cfg.extras&&S.cfg.extras[n])||0}
 function base(){return Number(S.cfg&&S.cfg.base)||0}
 function allMenuItems(){if(!S.cfg)return [];const out=[];["arroces","granos","carnes","sides"].forEach(k=>(S.cfg[k]||[]).forEach(n=>out.push([n,TIPO[k]])));solosList().forEach(x=>out.push([x.nombre,"Plato solo"]));return out}
-function platoNombre(x){return [x.arroz,x.granos,x.carne,x.side].filter(Boolean).join(" + ")}
+/* A plate is any mix of components: zero or more of each kind (e.g. two meats, or meat + side without rice). */
+const PARTES=["arroz","granos","carne","side"];
+function selVacia(){return {arroz:[],granos:[],carne:[],side:[]}}
+function asArr(v){return Array.isArray(v)?v:(v?String(v).split(", ").filter(Boolean):[])}
+function selTodos(x){return PARTES.flatMap(k=>asArr(x[k]))}
+function platoNombre(x){return selTodos(x).join(" + ")}
+function precioAuto(sel){
+  if(base()<=0) return null;
+  const extras=selTodos(sel).map(n=>[n,extraDe(n)]).filter(x=>x[1]>0);
+  return round2(base()+extras.reduce((s,x)=>s+x[1],0));
+}
 function ticket(){
   const sel=S.sel;
-  const algo=!!(sel.arroz||sel.granos||sel.carne||sel.side), listo=!!(sel.arroz&&sel.carne&&sel.side);
-  const extras=[sel.arroz,sel.granos,sel.carne,sel.side].filter(Boolean).map(n=>[n,extraDe(n)]).filter(x=>x[1]>0);
-  const precioPlato=base()>0?round2(base()+extras.reduce((s,x)=>s+x[1],0)):0;
+  const algo=selTodos(sel).length>0, listo=algo;
+  const extras=selTodos(sel).map(n=>[n,extraDe(n)]).filter(x=>x[1]>0);
+  const auto=precioAuto(sel);
+  const manual=S.precioManual!=null;
+  const precioPlato=manual?S.precioManual:(auto||0);
   const items=[];
   if(listo&&precioPlato>0) items.push({tipo:"plato",nombre:platoNombre(sel),cant:S.cant,precio:precioPlato});
   Object.entries(S.beb).forEach(([n,c])=>{const f=findSuelto(n);if(f&&c>0)items.push({tipo:f.tipo,suelto:true,nombre:n,cant:c,precio:hasPrice(f.item)?f.item.precio:0,sinPrecio:!hasPrice(f.item)})});
   const subtotal=items.reduce((s,i)=>s+i.cant*i.precio,0);
-  const ok=items.length>0&&!(algo&&!listo)&&!(listo&&precioPlato<=0)&&!items.some(i=>i.sinPrecio);
-  return {sel,algo,listo,extras,precioPlato,items,subtotal,ok};
+  const ok=items.length>0&&!(listo&&precioPlato<=0)&&!items.some(i=>i.sinPrecio);
+  return {sel,algo,listo,extras,auto,manual,precioPlato,items,subtotal,ok};
 }
-function pickChips(list,selected,attr){return '<div class="chips">'+list.map(x=>`<button class="chip" data-pick="${attr}|${esc(x)}" aria-pressed="${x===selected}">${esc(x)}${extraDe(x)>0?`<span class="ex">+${money(extraDe(x))}</span>`:""}</button>`).join("")+'</div>'}
+function pickChips(list,selected,attr){return '<div class="chips">'+list.map(x=>`<button class="chip" data-pick="${attr}|${esc(x)}" aria-pressed="${asArr(selected).includes(x)}">${esc(x)}${extraDe(x)>0?`<span class="ex">+${money(extraDe(x))}</span>`:""}</button>`).join("")+'</div>'}
 function menuHoyCard(){
   const m=hoyMenu();
   if(S.hoyEdit){
@@ -374,20 +389,18 @@ function rVender(){
     if(u) h+=`<button class="btn ghost" id="btnRepetir">Repetir última venta · ${esc(u.plato)}${u.cant>1?` (${u.cant})`:""}</button>`;
   }
   if(T.algo){
-    if(!T.listo) h+=`<div class="name empty">Falta: ${[!T.sel.arroz&&"arroz",!T.sel.carne&&"carne",!T.sel.side&&"side"].filter(Boolean).join(", ")}.</div>`;
-    else{
-      h+=`<div class="name">${esc(platoNombre(T.sel))}</div>`;
-      if(base()<=0||S.editBase) h+=`<div class="pricefix"><span class="small"><b>${base()>0?"Cambiar el precio base del plato.":"Falta el precio base del plato."}</b> ¿Cuánto cuesta un plato normal (sin IVU)? Se guarda en tu menú.</span><input id="cfgBaseT" inputmode="decimal" placeholder="Precio base" value="${base()>0?base().toFixed(2):""}" aria-label="Precio base del plato"></div>`;
-      else h+=`<div class="row small muted"><span>Base ${money(base())}${T.extras.map(x=>` · ${esc(x[0])} +${money(x[1])}`).join("")}</span><button class="link" id="btnEditBase">Cambiar precio</button></div>`;
-      h+=`<div class="row"><span class="muted small">Platos</span><div class="step"><button data-cant="-1" aria-label="Menos platos">−</button><output>${S.cant}</output><button data-cant="1" aria-label="Más platos">+</button></div></div>`;
-    }
+    h+=`<div class="name">${esc(platoNombre(T.sel))}</div>`;
+    const detalle=T.auto!=null?`Base ${money(base())}${T.extras.map(x=>` · ${esc(x[0])} +${money(x[1])}`).join("")}`:"Sin precio base: escribe el precio de este plato.";
+    h+=`<div class="preciorow"><label class="f" style="flex:1">Precio del plato (sin IVU)<input inputmode="decimal" id="precioPlato" enterkeyhint="done" placeholder="0.00" value="${T.precioPlato>0?T.precioPlato.toFixed(2):""}" aria-label="Precio de este plato sin IVU"></label>${T.manual&&T.auto!=null?`<button class="link" id="btnPrecioAuto">Usar ${money(T.auto)}</button>`:""}</div>
+      <div class="small muted">${T.manual?"Precio escrito a mano para esta venta.":detalle}</div>`;
+    h+=`<div class="row"><span class="muted small">Platos</span><div class="step"><button data-cant="-1" aria-label="Menos platos">−</button><output>${S.cant}</output><button data-cant="1" aria-label="Más platos">+</button></div></div>`;
   }
   if(T.items.length){
     h+='<div class="tlines">'+T.items.map(i=>`<div class="tline">${i.suelto?`<button class="mini" data-bmenos="${esc(i.nombre)}" aria-label="Quitar una ${esc(i.nombre)}">−</button>`:""}<span class="what">${i.cant}× ${esc(i.nombre)}</span>${(i.sinPrecio||S.editP===i.nombre)?`<input inputmode="decimal" data-bpnew="${esc(i.nombre)}" placeholder="Precio c/u" value="${i.precio>0?i.precio.toFixed(2):""}" aria-label="Precio de 1 ${esc(i.nombre)} sin IVU" style="max-width:96px;min-height:38px;padding:6px 8px;text-align:right">`:(i.suelto?`<button class="link num" data-editp="${esc(i.nombre)}" aria-label="Cambiar precio de ${esc(i.nombre)}" style="color:var(--ink);font-size:15px">${i.precio===0?"$0 incluido":money(i.cant*i.precio)} ✎</button>`:`<span class="num">${money(i.cant*i.precio)}</span>`)}</div>`).join("")+'</div>';
     if(T.items.some(i=>i.sinPrecio||S.editP===i.nombre)) h+='<div class="pricefix small"><b>Precio de cada uno</b>, sin IVU. Escríbelo y toca fuera del cuadro o Enter. Se guarda en tu menú.</div>';
   }
   h+=`${seg(PAGOS,S.metodo,"metodo")}
-    <div class="row small total"><span class="muted">Cobrar con IVU ${(ivu()*100).toFixed(1).replace(/\.0$/,"")}%</span><span class="num" style="font-size:18px">${money(T.subtotal*(1+ivu()))}</span></div>
+    <div class="row small total"><span class="muted">Cobrar con IVU ${(ivu()*100).toFixed(1).replace(/\.0$/,"")}%</span><span class="num" id="cobrarIVU" style="font-size:18px">${money(T.subtotal*(1+ivu()))}</span></div>
     <button class="btn" id="btnVenta" ${(!T.ok||!canWrite())?"disabled":""}>Registrar venta <span class="num">${money(T.subtotal)}</span></button>
     ${(T.algo||T.items.length)?'<button class="link" id="btnLimpiar">Empezar de nuevo</button>':""}
   </section>`;
@@ -542,6 +555,14 @@ V.addEventListener("input",ev=>{
   if(t.id==="gMonto"){S.g.monto=t.value;const b=document.getElementById("btnGasto");const m=parseFloat(t.value)||0;b.disabled=m<=0||!S.g.cat||!canWrite();b.querySelector(".num").textContent=money(m)}
   if(t.id==="gDesc")S.g.desc=t.value;
   if(t.id==="gSup")S.g.sup=t.value;
+  if(t.id==="precioPlato"){
+    // Live update without re-rendering, so a tap on "Registrar venta" right after typing is not lost.
+    const v=precioDe(t.value),a=precioAuto(S.sel);
+    S.precioManual=(v==null||(a!=null&&v===a))?null:v;
+    const T=ticket(),bv=document.getElementById("btnVenta"),cb=document.getElementById("cobrarIVU");
+    if(bv){bv.disabled=!T.ok||!canWrite();const n=bv.querySelector(".num");if(n)n.textContent=money(T.subtotal)}
+    if(cb)cb.textContent=money(T.subtotal*(1+ivu()));
+  }
   if(S.cx){if(t.id==="cxUrl")S.cx.url=t.value;if(t.id==="cxClave")S.cx.clave=t.value;if(t.id==="cxEquipo")S.cx.equipo=t.value;}
 });
 V.addEventListener("change",ev=>{
@@ -598,7 +619,8 @@ V.addEventListener("click",async ev=>{
   const b=ev.target.closest("button"); if(!b)return; const d=b.dataset;
   if(b.id==="btnEditBase"){S.editBase=true;render();setTimeout(()=>{const x=document.getElementById("cfgBaseT");if(x){x.focus();x.select()}},0);return}
   if(d.editp!==undefined){S.editP=d.editp;render();setTimeout(()=>{const x=V.querySelector(`[data-bpnew="${CSS.escape(d.editp)}"]`);if(x){x.focus();x.select()}},0);return}
-  if(d.pick){const i=d.pick.indexOf("|"),a=d.pick.slice(0,i),v=d.pick.slice(i+1);S.sel[a]=S.sel[a]===v?null:v;render();return}
+  if(d.pick){const i=d.pick.indexOf("|"),a=d.pick.slice(0,i),v=d.pick.slice(i+1);const arr=asArr(S.sel[a]).slice(),j=arr.indexOf(v);if(j>=0)arr.splice(j,1);else arr.push(v);S.sel[a]=arr;render();return}
+  if(b.id==="btnPrecioAuto"){S.precioManual=null;render();return}
   if(b.id==="btnHoyEdit"||d.hoyedit){
     S.hoyEdit=true;S.hoySel=(hoyMenu()||[]).slice();
     SUELTOS_HOY.forEach(([k])=>{if(!S.hoySel.some(x=>esDe(k,x)))lista(k).forEach(x=>S.hoySel.push(x.nombre))});
@@ -612,19 +634,19 @@ V.addEventListener("click",async ev=>{
   if(d.hoy!==undefined){const i=S.hoySel.indexOf(d.hoy);if(i>=0)S.hoySel.splice(i,1);else S.hoySel.push(d.hoy);render();return}
   if(b.id==="btnHoySave"){const arr=S.hoySel.slice(),fecha=S.today;b.disabled=true;
     enqueue(async()=>{const ref=S.db.doc("dias/"+fecha);const snap=await ref.get();if(snap.exists)await ref.update({menu:arr});else await ref.set({fecha,ventas:{},gastos:{},merma:{},menu:arr})})
-      .then(()=>{S.hoyEdit=false;Object.keys(S.sel).forEach(k=>{if(S.sel[k]&&!arr.includes(S.sel[k]))S.sel[k]=null});toast("Menú de hoy guardado");render()}).catch(e=>{toast(errMsg(e));render()});return}
+      .then(()=>{S.hoyEdit=false;PARTES.forEach(k=>{S.sel[k]=asArr(S.sel[k]).filter(x=>arr.includes(x))});toast("Menú de hoy guardado");render()}).catch(e=>{toast(errMsg(e));render()});return}
   if(d.beb!==undefined){S.beb[d.beb]=(S.beb[d.beb]||0)+1;render();return}
   if(d.bmenos!==undefined){S.beb[d.bmenos]=Math.max(0,(S.beb[d.bmenos]||0)-1);if(!S.beb[d.bmenos])delete S.beb[d.bmenos];render();return}
   if(b.id==="btnRepetir"){
     const u=dayStats(S.days[S.today]).v.slice(-1)[0]; if(!u)return;
     const vigentes=allMenuItems().map(x=>x[0]).filter(enHoy);
-    const pick=n=>n&&vigentes.includes(n)?n:null;
-    S.sel={arroz:null,granos:null,carne:null,side:null}; S.beb={};
-    if(u.tipo==="plato"&&u.arroz){S.sel={arroz:pick(u.arroz),granos:pick(u.granos),carne:pick(u.carne),side:pick(u.side)};S.cant=u.cant||1}
+    const pick=v=>asArr(v).filter(n=>vigentes.includes(n));
+    S.sel=selVacia();S.precioManual=null; S.beb={};
+    if(u.tipo==="plato"&&selTodos(u).length){PARTES.forEach(k=>{S.sel[k]=pick(u[k])});S.cant=u.cant||1;if(selTodos(S.sel).length&&Number(u.precio)>0&&u.precio!==precioAuto(S.sel))S.precioManual=Number(u.precio)}
     else if(u.plato){S.beb[u.plato]=u.cant||1}
     render();toast("Lista para repetir");return;
   }
-  if(b.id==="btnLimpiar"){S.sel={arroz:null,granos:null,carne:null,side:null};S.beb={};S.cant=1;render();return}
+  if(b.id==="btnLimpiar"){S.sel=selVacia();S.precioManual=null;S.beb={};S.cant=1;render();return}
   if(d.cant){S.cant=Math.max(1,S.cant+(+d.cant));render();return}
   if(d.metodo){S.metodo=d.metodo;try{localStorage.setItem("cc_metodo",d.metodo)}catch(e){}render();return}
   if(d.gcat){S.g.cat=d.gcat;render();return}
@@ -637,11 +659,11 @@ V.addEventListener("click",async ev=>{
   if(d.delok){const [f,k,id]=d.delok.split("|");S.confirmDel=null;b.disabled=true;deleteEntry(f,k,id).then(()=>toast("Borrado")).catch(e=>{toast(errMsg(e));render()});return}
   if(b.id==="btnVenta"){
     const T=ticket(); if(!T.ok)return;
-    const {arroz,granos,carne,side}=S.sel, now=Date.now(), entries=[];
-    if(T.listo) entries.push({t:now,tipo:"plato",plato:platoNombre(S.sel),arroz,granos:granos||"",carne,side,cant:S.cant,precio:T.precioPlato,metodo:S.metodo,ivu:ivu()});
+    const j=k=>asArr(S.sel[k]).join(", "), now=Date.now(), entries=[];
+    if(T.listo) entries.push({t:now,tipo:"plato",plato:platoNombre(S.sel),arroz:j("arroz"),granos:j("granos"),carne:j("carne"),side:j("side"),cant:S.cant,precio:T.precioPlato,metodo:S.metodo,ivu:ivu()});
     T.items.filter(i=>i.suelto).forEach((i,k)=>entries.push({t:now+k+1,tipo:i.tipo,plato:i.nombre,cant:i.cant,precio:i.precio,metodo:S.metodo,ivu:ivu()}));
     b.disabled=true; const total=T.subtotal;
-    writeEntries("ventas",entries).then(()=>{toast("Vendido · "+money(total));S.sel={arroz:null,granos:null,carne:null,side:null};S.beb={};S.cant=1;render()}).catch(e=>{toast(errMsg(e));render()});
+    writeEntries("ventas",entries).then(()=>{toast("Vendido · "+money(total));S.sel=selVacia();S.precioManual=null;S.beb={};S.cant=1;render()}).catch(e=>{toast(errMsg(e));render()});
     return;
   }
   if(b.id==="btnGasto"){
