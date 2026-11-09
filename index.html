@@ -327,24 +327,29 @@ function selVacia(){return {arroz:[],granos:[],carne:[],side:[]}}
 function asArr(v){return Array.isArray(v)?v:(v?String(v).split(", ").filter(Boolean):[])}
 function selTodos(x){return PARTES.flatMap(k=>asArr(x[k]))}
 function platoNombre(x){return selTodos(x).join(" + ")}
+/* The base price only applies to a complete plate (rice + meat + side). Anything else is priced by hand,
+   and nothing blocks a sale: an item with no price is recorded at $0. */
+function esCompleto(sel){return asArr(sel.arroz).length>0&&asArr(sel.carne).length>0&&asArr(sel.side).length>0}
 function precioAuto(sel){
-  if(base()<=0) return null;
+  if(base()<=0||!esCompleto(sel)) return null;
   const extras=selTodos(sel).map(n=>[n,extraDe(n)]).filter(x=>x[1]>0);
   return round2(base()+extras.reduce((s,x)=>s+x[1],0));
 }
 function ticket(){
   const sel=S.sel;
-  const algo=selTodos(sel).length>0, listo=algo;
+  const algo=selTodos(sel).length>0;
   const extras=selTodos(sel).map(n=>[n,extraDe(n)]).filter(x=>x[1]>0);
-  const auto=precioAuto(sel);
+  const auto=precioAuto(sel), completo=esCompleto(sel);
   const manual=S.precioManual!=null;
-  const precioPlato=manual?S.precioManual:(auto||0);
+  const precioPlato=manual?S.precioManual:auto;
+  const listo=algo||manual;
   const items=[];
-  if(listo&&precioPlato>0) items.push({tipo:"plato",nombre:platoNombre(sel),cant:S.cant,precio:precioPlato});
+  if(listo) items.push({tipo:"plato",nombre:algo?platoNombre(sel):"Plato (sin detalle)",cant:S.cant,precio:precioPlato==null?0:precioPlato,sinPrecio:precioPlato==null});
   Object.entries(S.beb).forEach(([n,c])=>{const f=findSuelto(n);if(f&&c>0)items.push({tipo:f.tipo,suelto:true,nombre:n,cant:c,precio:hasPrice(f.item)?f.item.precio:0,sinPrecio:!hasPrice(f.item)})});
   const subtotal=items.reduce((s,i)=>s+i.cant*i.precio,0);
-  const ok=items.length>0&&!(listo&&precioPlato<=0)&&!items.some(i=>i.sinPrecio);
-  return {sel,algo,listo,extras,auto,manual,precioPlato,items,subtotal,ok};
+  const faltan=items.filter(i=>i.sinPrecio).length;
+  const ok=items.length>0;
+  return {sel,algo,listo,completo,extras,auto,manual,precioPlato,items,subtotal,faltan,ok};
 }
 function pickChips(list,selected,attr){return '<div class="chips">'+list.map(x=>`<button class="chip" data-pick="${attr}|${esc(x)}" aria-pressed="${asArr(selected).includes(x)}">${esc(x)}${extraDe(x)>0?`<span class="ex">+${money(extraDe(x))}</span>`:""}</button>`).join("")+'</div>'}
 function menuHoyCard(){
@@ -388,16 +393,20 @@ function rVender(){
     const u=st.v[st.v.length-1];
     if(u) h+=`<button class="btn ghost" id="btnRepetir">Repetir última venta · ${esc(u.plato)}${u.cant>1?` (${u.cant})`:""}</button>`;
   }
-  if(T.algo){
-    h+=`<div class="name">${esc(platoNombre(T.sel))}</div>`;
-    const detalle=T.auto!=null?`Base ${money(base())}${T.extras.map(x=>` · ${esc(x[0])} +${money(x[1])}`).join("")}`:"Sin precio base: escribe el precio de este plato.";
-    h+=`<div class="preciorow"><label class="f" style="flex:1">Precio del plato (sin IVU)<input inputmode="decimal" id="precioPlato" enterkeyhint="done" placeholder="0.00" value="${T.precioPlato>0?T.precioPlato.toFixed(2):""}" aria-label="Precio de este plato sin IVU"></label>${T.manual&&T.auto!=null?`<button class="link" id="btnPrecioAuto">Usar ${money(T.auto)}</button>`:""}</div>
-      <div class="small muted">${T.manual?"Precio escrito a mano para esta venta.":detalle}</div>`;
-    h+=`<div class="row"><span class="muted small">Platos</span><div class="step"><button data-cant="-1" aria-label="Menos platos">−</button><output>${S.cant}</output><button data-cant="1" aria-label="Más platos">+</button></div></div>`;
+  if(T.algo) h+=`<div class="name">${esc(platoNombre(T.sel))}</div>`;
+  {
+    const detalle=T.manual?"Precio escrito a mano para esta venta."
+      :T.auto!=null?`Plato completo: base ${money(base())}${T.extras.map(x=>` · ${esc(x[0])} +${money(x[1])}`).join("")}`
+      :T.algo?(T.completo?"Escribe el precio del plato.":"No es plato completo: escribe el precio (ej. arroz y molleja $5).")
+      :"También puedes escribir solo el precio, sin escoger productos.";
+    h+=`<div class="preciorow"><label class="f" style="flex:1">Precio del plato (sin IVU)<input inputmode="decimal" id="precioPlato" enterkeyhint="done" placeholder="0.00" value="${T.precioPlato!=null&&T.listo?T.precioPlato.toFixed(2):""}" aria-label="Precio de este plato sin IVU"></label>${T.manual&&T.auto!=null?`<button class="link" id="btnPrecioAuto">Usar ${money(T.auto)}</button>`:""}</div>
+      <div class="small muted" id="precioNota">${detalle}</div>`;
+    if(T.listo) h+=`<div class="row"><span class="muted small">Platos</span><div class="step"><button data-cant="-1" aria-label="Menos platos">−</button><output>${S.cant}</output><button data-cant="1" aria-label="Más platos">+</button></div></div>`;
   }
   if(T.items.length){
-    h+='<div class="tlines">'+T.items.map(i=>`<div class="tline">${i.suelto?`<button class="mini" data-bmenos="${esc(i.nombre)}" aria-label="Quitar una ${esc(i.nombre)}">−</button>`:""}<span class="what">${i.cant}× ${esc(i.nombre)}</span>${(i.sinPrecio||S.editP===i.nombre)?`<input inputmode="decimal" data-bpnew="${esc(i.nombre)}" placeholder="Precio c/u" value="${i.precio>0?i.precio.toFixed(2):""}" aria-label="Precio de 1 ${esc(i.nombre)} sin IVU" style="max-width:96px;min-height:38px;padding:6px 8px;text-align:right">`:(i.suelto?`<button class="link num" data-editp="${esc(i.nombre)}" aria-label="Cambiar precio de ${esc(i.nombre)}" style="color:var(--ink);font-size:15px">${i.precio===0?"$0 incluido":money(i.cant*i.precio)} ✎</button>`:`<span class="num">${money(i.cant*i.precio)}</span>`)}</div>`).join("")+'</div>';
-    if(T.items.some(i=>i.sinPrecio||S.editP===i.nombre)) h+='<div class="pricefix small"><b>Precio de cada uno</b>, sin IVU. Escríbelo y toca fuera del cuadro o Enter. Se guarda en tu menú.</div>';
+    h+='<div class="tlines">'+T.items.map(i=>`<div class="tline">${i.suelto?`<button class="mini" data-bmenos="${esc(i.nombre)}" aria-label="Quitar una ${esc(i.nombre)}">−</button>`:""}<span class="what">${i.cant}× ${esc(i.nombre)}</span>${((i.suelto&&i.sinPrecio)||S.editP===i.nombre)?`<input inputmode="decimal" data-bpnew="${esc(i.nombre)}" placeholder="Precio c/u" value="${i.precio>0?i.precio.toFixed(2):""}" aria-label="Precio de 1 ${esc(i.nombre)} sin IVU" style="max-width:96px;min-height:38px;padding:6px 8px;text-align:right">`:(i.suelto?`<button class="link num" data-editp="${esc(i.nombre)}" aria-label="Cambiar precio de ${esc(i.nombre)}" style="color:var(--ink);font-size:15px">${i.precio===0?"$0 incluido":money(i.cant*i.precio)} ✎</button>`:(i.sinPrecio?`<span class="small muted">sin precio</span>`:`<span class="num">${money(i.cant*i.precio)}</span>`))}</div>`).join("")+'</div>';
+    if(T.items.some(i=>(i.sinPrecio&&i.suelto)||S.editP===i.nombre)) h+='<div class="pricefix small"><b>Precio de cada uno</b>, sin IVU. Escríbelo y toca fuera del cuadro o Enter. Se guarda en tu menú.</div>';
+    if(T.faltan) h+=`<div class="small muted">Lo que no tenga precio se registra a $0. Puedes vender igual.</div>`;
   }
   h+=`${seg(PAGOS,S.metodo,"metodo")}
     <div class="row small total"><span class="muted">Cobrar con IVU ${(ivu()*100).toFixed(1).replace(/\.0$/,"")}%</span><span class="num" id="cobrarIVU" style="font-size:18px">${money(T.subtotal*(1+ivu()))}</span></div>
@@ -559,8 +568,12 @@ V.addEventListener("input",ev=>{
     // Live update without re-rendering, so a tap on "Registrar venta" right after typing is not lost.
     const v=precioDe(t.value),a=precioAuto(S.sel);
     S.precioManual=(v==null||(a!=null&&v===a))?null:v;
-    const T=ticket(),bv=document.getElementById("btnVenta"),cb=document.getElementById("cobrarIVU");
+    const T=ticket(),bv=document.getElementById("btnVenta"),cb=document.getElementById("cobrarIVU"),pn=document.getElementById("precioNota");
     if(bv){bv.disabled=!T.ok||!canWrite();const n=bv.querySelector(".num");if(n)n.textContent=money(T.subtotal)}
+    if(pn&&S.precioManual!=null)pn.textContent="Precio escrito a mano para esta venta.";
+    const row=t.closest(".preciorow"), ua=document.getElementById("btnPrecioAuto");
+    if(row&&S.precioManual!=null&&a!=null&&!ua){const x=document.createElement("button");x.className="link";x.id="btnPrecioAuto";x.textContent="Usar "+money(a);row.appendChild(x)}
+    else if(ua&&(S.precioManual==null||a==null))ua.remove();
     if(cb)cb.textContent=money(T.subtotal*(1+ivu()));
   }
   if(S.cx){if(t.id==="cxUrl")S.cx.url=t.value;if(t.id==="cxClave")S.cx.clave=t.value;if(t.id==="cxEquipo")S.cx.equipo=t.value;}
@@ -660,10 +673,10 @@ V.addEventListener("click",async ev=>{
   if(b.id==="btnVenta"){
     const T=ticket(); if(!T.ok)return;
     const j=k=>asArr(S.sel[k]).join(", "), now=Date.now(), entries=[];
-    if(T.listo) entries.push({t:now,tipo:"plato",plato:platoNombre(S.sel),arroz:j("arroz"),granos:j("granos"),carne:j("carne"),side:j("side"),cant:S.cant,precio:T.precioPlato,metodo:S.metodo,ivu:ivu()});
+    if(T.listo) entries.push({t:now,tipo:"plato",plato:T.items[0].nombre,arroz:j("arroz"),granos:j("granos"),carne:j("carne"),side:j("side"),cant:S.cant,precio:T.precioPlato==null?0:T.precioPlato,metodo:S.metodo,ivu:ivu()});
     T.items.filter(i=>i.suelto).forEach((i,k)=>entries.push({t:now+k+1,tipo:i.tipo,plato:i.nombre,cant:i.cant,precio:i.precio,metodo:S.metodo,ivu:ivu()}));
-    b.disabled=true; const total=T.subtotal;
-    writeEntries("ventas",entries).then(()=>{toast("Vendido · "+money(total));S.sel=selVacia();S.precioManual=null;S.beb={};S.cant=1;render()}).catch(e=>{toast(errMsg(e));render()});
+    b.disabled=true; const total=T.subtotal, faltan=T.faltan;
+    writeEntries("ventas",entries).then(()=>{toast("Vendido · "+money(total)+(faltan?" (algo sin precio, a $0)":""));S.sel=selVacia();S.precioManual=null;S.beb={};S.cant=1;render()}).catch(e=>{toast(errMsg(e));render()});
     return;
   }
   if(b.id==="btnGasto"){
